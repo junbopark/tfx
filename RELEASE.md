@@ -1,20 +1,4 @@
-# Current Version (Still in Development)
-
-## Major Features and Improvements
-
-## Breaking changes
-
-### For pipeline authors
-
-### For component authors
-
-## Deprecations
-
-## Bug fixes and other changes
-
-## Documentation updates
-
-# Version 0.27.0
+# Current Version(Still in Development)
 
 ## Major Features and Improvements
 
@@ -28,36 +12,38 @@
 
 ## Breaking changes
 
-### For pipeline authors
-
+*   Do not store pipeline information on the local filesystem when using
+    Kubeflow Pipelines orchestration with CLI. CLI will always use the latest
+    version of the pipeline in the Kubeflow Pipeline cluster.
+    All operations will be executed based on the information on the
+    Kubeflow Pipeline cluster. There might be some left files on
+    `${HOME}/tfx/kubeflow` or `${HOME}/kubeflow` but those will not be used
+    any more.
 *   `enable_quantization` from TFLITE_REWRITER is removed and setting
     quantization_optimizations = [tf.lite.Optimize.DEFAULT] will perform the
     same type of quantization, dynamic range quantization. Users of the
     TFLITE_REWRITER who do not enable quantization should be uneffected.
-*   Removed previously deprecated input/output compatibility aliases
-    for ExampleValidator and Evaluator, as stated in previous release log.
+*   Deprecated input/output compatibility aliases for ExampleValidator and
+    Evaluator.
 *   Default value for `infer_feature_shape` for SchemaGen changed from `False`
     to `True`, as indicated in previous release log. The inferred schema might
     change if you do not specify `infer_feature_shape`. It might leads to
     changes of the type of input features in Transform and Trainer code.
 
-### For component authors
+### For pipeline authors
 
-*   N/A
-
-## Deprecations
-
-*   Pipeline information is not be stored on the local filesystem anymore using
-    Kubeflow Pipelines orchestration with CLI. Instead, CLI will always use the
-    latest version of the pipeline in the Kubeflow Pipeline cluster. All
-    operations will be executed based on the information on the Kubeflow
-    Pipeline cluster. There might be some left files on
-    `${HOME}/tfx/kubeflow` or `${HOME}/kubeflow` but those will not be used
-    any more.
 *   The `tfx.components.common_nodes.importer_node.ImporterNode` class has been
     moved to `tfx.dsl.components.common.importer_node.ImporterNode`, with its
     old module path kept as a deprecated alias, which will be removed in a
     future version.
+*   The `tfx.components.common_nodes.resolver_node.ResolverNode` class has been
+    moved to `tfx.dsl.components.common.resolver_node.ResolverNode`, with its
+    old module path kept as a deprecated alias, which will be removed in a
+    future version.
+
+### For component authors
+
+## Deprecations
 
 ## Bug fixes and other changes
 
@@ -66,57 +52,20 @@
     Such alternative image should behave the same as official
     `tensorflow/serving` image such as the same model volume path, serving port,
     etc.
-*   Executor in `tfx.extensions.google_cloud_ai_platform.pusher.executor`
-    supported regional endpoint and machine_type.
+*   Executor in `tfx.extensions.google_cloud_ai_platform.pusher.executor` supported regional endpoint and machine_type.
+*   Depends on `tensorflow>=1.15.2,!=2.0.*,!=2.1.*,!=2.2.*,!=2.3.*,<3`.
+*   Depends on `tensorflow-serving-api>=1.15,!=2.0.*,!=2.1.*,!=2.2.*,!=2.3.*,<3`.
+*   The `tfx.__version__` attribute was restored.
 *   Starting from this version, proto files which are used to generate
     component-level configs are included in the `tfx` package directly.
 *   The `tfx.dsl.io.fileio.NotFoundError` exception unifies handling of not-
     found errors across different filesystem plugin backends.
+*   Depends on `apache-beam[gcp]>=2.27,<3`.
+*   Depends on `pyarrow>=1,<3`.
 *   Fixes the serialization of zero-valued default when using `RuntimeParameter`
     on Kubeflow.
-*   Depends on `apache-beam[gcp]>=2.27,<3`.
-*   Depends on `ml-metadata>=0.27.0,<0.28.0`.
-*   Depends on `pyarrow>=1,<3`.
-*   Depends on `tensorflow>=1.15.2,!=2.0.*,!=2.1.*,!=2.2.*,!=2.3.*,<3`.
-*   Depends on `tensorflow-data-validation>=0.27.0,<0.28.0`.
-*   Depends on `tensorflow-model-analysis>=0.27.0,<0.28.0`.
-*   Depends on `tensorflow-serving-api>=1.15,!=2.0.*,!=2.1.*,!=2.2.*,!=2.3.*,<3`.
-*   Depends on `tensorflow-transform>=0.27.0,<0.28.0`.
-*   Depends on `tfx-bsl>=0.27.0,<0.28.0`.
 
 ## Documentation updates
-
-# Version 0.26.1
-
-*   This a bug fix only version
-
-## Major Features and Improvements
-
-*   N/A
-
-## Breaking changes
-
-*   N/A
-
-### For pipeline authors
-
-*   N/A
-
-### For component authors
-
-*   N/A
-
-## Deprecations
-
-*   N/A
-
-## Bug fixes and other changes
-
-*   The `tfx.version` attribute was restored.
-
-## Documentation updates
-
-*   N/A
 
 # Version 0.26.0
 
