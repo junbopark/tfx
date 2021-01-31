@@ -27,6 +27,7 @@
     statistics within the Transform component.
 
 ## Breaking changes
+*   Deprecated input/output compatibility aliases for SchemaGen.
 
 ### For pipeline authors
 
