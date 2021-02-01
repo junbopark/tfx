@@ -28,6 +28,8 @@
 
 ## Breaking changes
 
+*   Deprecated input/output compatibility aliases for StatisticsGen.
+
 ### For pipeline authors
 
 *   `enable_quantization` from TFLITE_REWRITER is removed and setting
