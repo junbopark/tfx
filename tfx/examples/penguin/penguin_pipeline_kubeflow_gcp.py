@@ -18,7 +18,6 @@ import os
 from typing import Dict, List, Optional, Text
 
 from absl import app
-from absl import flags
 import tensorflow_model_analysis as tfma
 from tfx.components import CsvExampleGen
 from tfx.components import Evaluator
@@ -42,10 +41,6 @@ from tfx.types import Channel
 from tfx.types.standard_artifacts import Model
 from tfx.types.standard_artifacts import ModelBlessing
 
-
-FLAGS = flags.FLAGS
-flags.DEFINE_bool('distributed_training', False,
-                  'If True, enable distributed training.')
 
 _pipeline_name = 'penguin_kubeflow_gcp'
 
@@ -206,44 +201,16 @@ def create_pipeline(
       schema=schema_gen.outputs['schema'],
       module_file=module_file)
 
-  # Update ai_platform_training_args if distributed training was enabled.
-  # Number of worker machines used in distributed training.
-  worker_count = data_types.RuntimeParameter(
-      name='worker_count',
-      default=2,
-      ptype=int,
-  )
-
-  # Type of worker machines used in distributed training.
-  worker_type = data_types.RuntimeParameter(
-      name='worker_type',
-      default='standard',
-      ptype=str,
-  )
-
   local_training_args = copy.deepcopy(ai_platform_training_args)
-  if FLAGS.distributed_training:
-    local_training_args.update({
-        # You can specify the machine types, the number of replicas for workers
-        # and parameter servers.
-        # https://cloud.google.com/ml-engine/reference/rest/v1/projects.jobs#ScaleTier
-        'scaleTier': 'CUSTOM',
-        'masterType': 'large_model',
-        'workerType': worker_type,
-        'parameterServerType': 'standard',
-        'workerCount': worker_count,
-        'parameterServerCount': 1,
-    })
 
   # Tunes the hyperparameters for model training based on user-provided Python
   # function. Note that once the hyperparameters are tuned, you can drop the
   # Tuner component from pipeline and feed Trainer with tuned hyperparameters.
   if enable_tuning:
-    # The Tuner component launches 1 AIP Training job for flock management.
-    # For example, 3 workers (defined by num_parallel_trials) in the flock
-    # management AIP Training job, each runs Tuner.Executor.
-    # Then, 3 AIP Training Jobs (defined by local_training_args) are invoked
-    # from each worker in the flock management Job for Trial execution.
+    # The Tuner component launches 1 AIP Training job for flock management of
+    # parallel tuning. For example, 3 workers (defined by num_parallel_trials)
+    # in the flock management AIP Training job, each runs a search loop for
+    # trials. Distributed training for each trial is not supported.
     tuner = Tuner(
         module_file=module_file,
         examples=transform.outputs['transformed_examples'],
@@ -253,12 +220,8 @@ def create_pipeline(
         tune_args=tuner_pb2.TuneArgs(
             # num_parallel_trials=3 means that 3 search loops are
             # running in parallel.
-            # Each tuner may include a distributed training job which can be
-            # specified in local_training_args above (e.g. 1 PS + 2 workers).
             num_parallel_trials=3),
         custom_config={
-            # Configures Cloud AI Platform-specific configs . For details, see
-            # https://cloud.google.com/ai-platform/training/docs/reference/rest/v1/projects.jobs#traininginput.
             ai_platform_trainer_executor.TRAINING_ARGS_KEY:
                 local_training_args
         })
