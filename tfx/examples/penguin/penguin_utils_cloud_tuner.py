@@ -18,7 +18,7 @@ This module file will be used in the Transform, Tuner and generic Trainer
 components.
 """
 
-import os
+import functools
 from typing import List, Text
 import absl
 import kerastuner
@@ -32,12 +32,6 @@ from tfx.components.trainer.fn_args_utils import FnArgs
 from tfx.components.tuner.component import TunerFnResult
 from tfx_bsl.tfxio import dataset_options
 
-
-# The project/region configuations for Cloud Vizier service (and Trial execution
-# thereof), not the AIP Training service for distributed tuning flock
-# management.
-_PROJECT_ID = 'my-gcp-project'
-_REGION = 'us-central1'
 
 _FEATURE_KEYS = [
     'culmen_length_mm', 'culmen_depth_mm', 'flipper_length_mm', 'body_mass_g'
@@ -85,7 +79,8 @@ def _input_fn(file_pattern: List[Text],
   Args:
     file_pattern: List of paths or patterns of input tfrecord files.
     data_accessor: DataAccessor for converting input to RecordBatch.
-    tf_transform_output: A TFTransformOutput.
+    tf_transform_output: A `TFTransformOutput` object, containing statistics
+      and metadata from TFTransform component.
     batch_size: representing the number of consecutive elements of returned
       dataset to combine in a single batch
 
@@ -98,45 +93,6 @@ def _input_fn(file_pattern: List[Text],
       dataset_options.TensorFlowDatasetOptions(
           batch_size=batch_size, label_key=_transformed_name(_LABEL_KEY)),
       tf_transform_output.transformed_metadata.schema).repeat()
-
-
-def _get_hyperparameters() -> kerastuner.HyperParameters:
-  """Returns hyperparameters for building Keras model."""
-  hp = kerastuner.HyperParameters()
-  # Defines search space.
-  hp.Choice('learning_rate', [1e-5, 1e-4, 1e-3, 1e-2], default=1e-2)
-  hp.Int('num_layers', 1, 4, default=2)
-  return hp
-
-
-def _build_keras_model(hparams: kerastuner.HyperParameters) -> tf.keras.Model:
-  """Creates a DNN Keras model for classifying penguin data.
-
-  Args:
-    hparams: Holds HyperParameters for tuning.
-
-  Returns:
-    A Keras Model.
-  """
-  # The model below is built with Functional API, please refer to
-  # https://www.tensorflow.org/guide/keras/overview for all API options.
-  inputs = [
-      keras.layers.Input(shape=(1,), name=_transformed_name(f))
-      for f in _FEATURE_KEYS
-  ]
-  d = keras.layers.concatenate(inputs)
-  for _ in range(int(hparams.get('num_layers'))):
-    d = keras.layers.Dense(8, activation='relu')(d)
-  outputs = keras.layers.Dense(3, activation='softmax')(d)
-
-  model = keras.Model(inputs=inputs, outputs=outputs)
-  model.compile(
-      optimizer=keras.optimizers.Adam(hparams.get('learning_rate')),
-      loss='sparse_categorical_crossentropy',
-      metrics=[keras.metrics.SparseCategoricalAccuracy()])
-
-  model.summary(print_fn=absl.logging.info)
-  return model
 
 
 # TFX Transform will call this function.
@@ -163,19 +119,70 @@ def preprocessing_fn(inputs):
   return outputs
 
 
+def _get_hyperparameters() -> kerastuner.HyperParameters:
+  """Returns hyperparameters for building Keras model."""
+  hp = kerastuner.HyperParameters()
+  # Defines search space.
+  hp.Choice('learning_rate', [1e-5, 1e-4, 1e-3, 1e-2], default=1e-2)
+  hp.Int('num_layers', 1, 4, default=2)
+  return hp
+
+
+def _build_keras_model(
+    hparams: kerastuner.HyperParameters,
+    tf_transform_output: tft.TFTransformOutput) -> tf.keras.Model:
+  """Creates a DNN Keras model for classifying penguin data.
+
+  Args:
+    hparams: Holds HyperParameters for tuning.
+    tf_transform_output: A `TFTransformOutput` object, containing statistics
+      and metadata from TFTransform component.
+
+  Returns:
+    A Keras Model.
+  """
+  # Unused. Included to illustrate a design pattern to utilize Transform
+  # preprocessing e.g. vocab sizes, number of discretized buckets, etc. during
+  # model building such as with the FeatureColumn API. To read this output:
+  # tf_transform_output.num_buckets_for_transformed_feature(_transformed_name(f)).
+  del tf_transform_output
+
+  # The model below is built with Functional API, please refer to
+  # https://www.tensorflow.org/guide/keras/overview for all API options.
+  inputs = [
+      keras.layers.Input(shape=(1,), name=_transformed_name(f))
+      for f in _FEATURE_KEYS
+  ]
+  d = keras.layers.concatenate(inputs)
+  for _ in range(int(hparams.get('num_layers'))):
+    d = keras.layers.Dense(8, activation='relu')(d)
+  outputs = keras.layers.Dense(3, activation='softmax')(d)
+
+  model = keras.Model(inputs=inputs, outputs=outputs)
+  model.compile(
+      optimizer=keras.optimizers.Adam(hparams.get('learning_rate')),
+      loss='sparse_categorical_crossentropy',
+      metrics=[keras.metrics.SparseCategoricalAccuracy()])
+
+  model.summary(print_fn=absl.logging.info)
+  return model
+
+
 # TFX Tuner will call this function.
 def tuner_fn(fn_args: FnArgs) -> TunerFnResult:
   """Build the tuner using the CloudTuner API.
 
   Args:
-    fn_args: Holds args as name/value pairs.
+    fn_args: Holds args as name/value pairs. See
+      https://www.tensorflow.org/tfx/api_docs/python/tfx/components/trainer/fn_args_utils/FnArgs.
+      - transform_graph_path: optional transform graph produced by TFT.
+      - custom_config: An optional dictionary passed to the component. In this
+        example, it contains the dict ai_platform_training_args.
       - working_dir: working dir for tuning.
       - train_files: List of file paths containing training tf.Example data.
       - eval_files: List of file paths containing eval tf.Example data.
       - train_steps: number of train steps.
       - eval_steps: number of eval steps.
-      - schema_path: optional schema of the input data.
-      - transform_graph_path: optional transform graph produced by TFT.
 
   Returns:
     A namedtuple contains the following:
@@ -184,18 +191,28 @@ def tuner_fn(fn_args: FnArgs) -> TunerFnResult:
                     model , e.g., the training and validation dataset. Required
                     args depend on the above tuner's implementation.
   """
+  transform_graph = tft.TFTransformOutput(fn_args.transform_graph_path)
+
+  # Construct a partial function for CloudTuner that just takes hparams.
+  build_keras_model_fn = functools.partial(
+      _build_keras_model, tf_transform_output=transform_graph)
+
   # CloudTuner is a subclass of kerastuner.Tuner which inherits from
   # BaseTuner.
   tuner = CloudTuner(
-      _build_keras_model,
-      project_id=_PROJECT_ID,
-      region=_REGION,
+      build_keras_model_fn,
+      # The project/region configuations for Cloud Vizier service and its trial
+      # executions. Note: this example uses the same configuration as the
+      # CAIP Training service for distributed tuning flock management to view
+      # all of the pipeline's jobs and resources in the same project. It can
+      # also be configured separately.
+      project_id=fn_args.custom_config['ai_platform_training_args']['project'],
+      region=fn_args.custom_config['ai_platform_training_args']['region'],
       objective=kerastuner.Objective('val_sparse_categorical_accuracy', 'max'),
       hyperparameters=_get_hyperparameters(),
       max_trials=8,  # Optional.
       directory=fn_args.working_dir)
 
-  transform_graph = tft.TFTransformOutput(fn_args.transform_graph_path)
   train_dataset = _input_fn(
       fn_args.train_files,
       fn_args.data_accessor,
@@ -221,7 +238,21 @@ def run_fn(fn_args: FnArgs):
   """Train the model based on given args.
 
   Args:
-    fn_args: Holds args used to train the model as name/value pairs.
+    fn_args: Holds args as name/value pairs. See
+      https://www.tensorflow.org/tfx/api_docs/python/tfx/components/trainer/fn_args_utils/FnArgs.
+      - train_files: List of file paths containing training tf.Example data.
+      - eval_files: List of file paths containing eval tf.Example data.
+      - data_accessor: Contains factories that can create tf.data.Datasets or
+        other means to access the train/eval data. They provide a uniform way
+        of accessing data, regardless of how the data is stored on disk.
+      - train_steps: number of train steps.
+      - eval_steps: number of eval steps.
+      - transform_output: A uri to a path containing statistics and metadata
+        from TFTransform component.
+        produced by TFT. Will be None if not specified.
+      - model_run_dir: A single uri for the output directory of model training
+        related files.
+      - hyperparameters: An optional kerastuner.HyperParameters config.
   """
   tf_transform_output = tft.TFTransformOutput(fn_args.transform_output)
 
@@ -247,17 +278,12 @@ def run_fn(fn_args: FnArgs):
 
   mirrored_strategy = tf.distribute.MirroredStrategy()
   with mirrored_strategy.scope():
-    model = _build_keras_model(hparams)
-
-  try:
-    log_dir = fn_args.model_run_dir
-  except KeyError:
-    # TODO(b/158106209): use ModelRun instead of Model artifact for logging.
-    log_dir = os.path.join(os.path.dirname(fn_args.serving_model_dir), 'logs')
+    model = _build_keras_model(
+        hparams=hparams, tf_transform_output=tf_transform_output)
 
   # Write logs to path
   tensorboard_callback = tf.keras.callbacks.TensorBoard(
-      log_dir=log_dir, update_freq='batch')
+      log_dir=fn_args.model_run_dir, update_freq='batch')
 
   model.fit(
       train_dataset,
